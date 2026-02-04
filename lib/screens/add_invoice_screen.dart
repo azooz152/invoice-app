@@ -1,8 +1,8 @@
 import 'dart:io';
+import 'dart:ui'; // لتأثير الزجاج
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_ml_kit_text_recognition/google_ml_kit_text_recognition.dart';
-import 'home_screen.dart';
 
 class AddInvoiceScreen extends StatefulWidget {
   @override
@@ -14,27 +14,21 @@ class _AddInvoiceScreenState extends State<AddInvoiceScreen> {
   final ImagePicker _picker = ImagePicker();
   bool _isScanning = false;
 
-  // حقول النص (Controllers) عشان نعبيها تلقائياً
   final TextEditingController nameController = TextEditingController();
   final TextEditingController amountController = TextEditingController();
   final TextEditingController dateController = TextEditingController();
 
-  // 1. دالة اختيار الصورة
+  // --- 1. دوال الذكاء الاصطناعي (المخ) ---
   Future<void> _pickImage(ImageSource source) async {
     final pickedFile = await _picker.pickImage(source: source);
     if (pickedFile != null) {
-      setState(() {
-        _image = File(pickedFile.path);
-      });
-      // بمجرد اختيار الصورة، ابدأ التحليل فوراً
+      setState(() => _image = File(pickedFile.path));
       _scanImage();
     }
   }
 
-  // 2. دالة الذكاء الاصطناعي (المخ) 🧠
   Future<void> _scanImage() async {
     if (_image == null) return;
-
     setState(() => _isScanning = true);
 
     try {
@@ -42,181 +36,233 @@ class _AddInvoiceScreenState extends State<AddInvoiceScreen> {
       final textRecognizer = TextRecognizer();
       final RecognizedText recognizedText = await textRecognizer.processImage(inputImage);
 
-      String extractedText = recognizedText.text;
-      
-      // تحليل النص لاستخراج البيانات
-      _analyzeText(extractedText);
-
+      _analyzeText(recognizedText.text); // تحليل البيانات
       await textRecognizer.close();
     } catch (e) {
-      print("خطأ في القراءة: $e");
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("لم نتمكن من قراءة الفاتورة بوضوح")));
+      print("Error scanning: $e");
     }
-
     setState(() => _isScanning = false);
   }
 
-  // 3. خوارزمية البحث عن البيانات (الفلترة)
+  // خوارزمية البحث الذكية
   void _analyzeText(String text) {
     List<String> lines = text.split('\n');
-
-    // أ. اسم المحل: غالباً يكون في أول سطر
+    
+    // أ. اسم المحل (أول سطر)
     if (lines.isNotEmpty) {
-      nameController.text = lines[0].trim(); 
+      nameController.text = lines[0].trim();
     }
 
-    // ب. البحث عن التاريخ والمبلغ
-    // تعبيرات نمطية (Regex) للبحث عن الأشكال
+    // ب. التاريخ والمبلغ
     RegExp datePattern = RegExp(r'\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2}[-/]\d{4}');
-    RegExp moneyPattern = RegExp(r'\d+[.,]\d{2}'); // يبحث عن أرقام فيها فواصل مثل 50.00
+    // يبحث عن أرقام فيها فواصل عشرية (مثل 50.00 أو 100,50)
+    RegExp moneyPattern = RegExp(r'\d+[.,]\d{2}'); 
 
     double maxAmount = 0.0;
 
     for (String line in lines) {
-      // البحث عن التاريخ
+      // 1. صيد التاريخ
       if (datePattern.hasMatch(line) && dateController.text.isEmpty) {
         dateController.text = datePattern.firstMatch(line)!.group(0)!;
       }
 
-      // البحث عن المبالغ (نأخذ أكبر رقم لأنه غالباً المجموع)
+      // 2. صيد المبلغ (نأخذ أكبر رقم في الفاتورة لأنه غالباً الإجمالي)
       Iterable<Match> moneyMatches = moneyPattern.allMatches(line);
       for (var match in moneyMatches) {
         String numStr = match.group(0)!.replaceAll(',', '.'); // توحيد الفاصلة
         try {
           double val = double.parse(numStr);
-          if (val > maxAmount) {
+          // تجاهل الأرقام الطويلة جداً (عشان ما يلخبط مع الرقم الضريبي)
+          if (val > maxAmount && val < 100000) { 
             maxAmount = val;
           }
         } catch (e) {}
       }
     }
 
-    // وضع أكبر رقم في خانة المبلغ
+    // تعبئة خانة المبلغ تلقائياً
     if (maxAmount > 0) {
       amountController.text = maxAmount.toStringAsFixed(2);
     }
   }
 
+  // --- 2. التصميم المستقبلي 2027 (الشكل) ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text("مسح فاتورة 📸", style: TextStyle(fontFamily: 'Cairo')),
-        backgroundColor: Colors.blue.shade800,
+        title: Text("مسح فاتورة 📸", style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // مساحة الصورة
-            GestureDetector(
-              onTap: () => _showPickerOption(),
-              child: Container(
-                height: 250,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(15),
-                  border: Border.all(color: Colors.blueAccent),
-                ),
-                child: _image != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(15),
-                        child: Image.file(_image!, fit: BoxFit.cover),
-                      )
-                    : Column(
+      body: Stack(
+        children: [
+          // الخلفية الفضائية
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF1A2980), Color(0xFF26D0CE)],
+              ),
+            ),
+          ),
+          
+          // دوائر جمالية
+          Positioned(top: -50, left: -50, child: _glowCircle()),
+          Positioned(bottom: 100, right: -50, child: _glowCircle()),
+
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  // شاشة السكانر
+                  GestureDetector(
+                    onTap: () => _showPickerOption(),
+                    child: AnimatedContainer(
+                      duration: Duration(milliseconds: 500),
+                      height: 220,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(25),
+                        border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
+                        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20, spreadRadius: 5)],
+                      ),
+                      child: _image != null
+                          ? ClipRRect(borderRadius: BorderRadius.circular(25), child: Image.file(_image!, fit: BoxFit.cover))
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.qr_code_scanner, size: 70, color: Colors.white70),
+                                SizedBox(height: 10),
+                                Text("اضغط لتصوير الفاتورة", style: TextStyle(color: Colors.white, fontFamily: 'Cairo')),
+                              ],
+                            ),
+                    ),
+                  ),
+                  
+                  SizedBox(height: 30),
+
+                  if (_isScanning)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.camera_enhance, size: 60, color: Colors.grey),
-                          Text("اضغط هنا لتصوير الفاتورة", style: TextStyle(fontFamily: 'Cairo')),
+                          CircularProgressIndicator(color: Colors.white),
+                          SizedBox(width: 10),
+                          Text("جاري استخراج البيانات...", style: TextStyle(color: Colors.white70, fontFamily: 'Cairo')),
                         ],
                       ),
-              ),
-            ),
-            SizedBox(height: 20),
+                    ),
 
-            // مؤشر التحميل أثناء الذكاء الاصطناعي
-            if (_isScanning) 
-              Column(
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 10),
-                  Text("جاري تحليل البيانات بالذكاء الاصطناعي... 🤖", style: TextStyle(color: Colors.blue)),
-                  SizedBox(height: 20),
+                  // الحقول الشفافة (معبأة تلقائياً)
+                  _glassTextField(controller: nameController, label: "اسم المحل", icon: Icons.store),
+                  SizedBox(height: 15),
+                  
+                  _glassTextField(
+                    controller: amountController, 
+                    label: "المبلغ", 
+                    icon: Icons.attach_money, 
+                    isNumber: true,
+                    isBig: true
+                  ),
+                  SizedBox(height: 15),
+                  
+                  _glassTextField(controller: dateController, label: "التاريخ", icon: Icons.calendar_today),
+                  
+                  SizedBox(height: 40),
+
+                  // زر الحفظ
+                  Container(
+                    width: double.infinity,
+                    height: 60,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      gradient: LinearGradient(colors: [Colors.orange.shade400, Colors.deepOrange]),
+                      boxShadow: [BoxShadow(color: Colors.orange.withOpacity(0.4), blurRadius: 15, offset: Offset(0, 5))],
+                    ),
+                    child: ElevatedButton(
+                      onPressed: () {
+                         Navigator.pop(context);
+                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("تم الحفظ بنجاح ✨")));
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      ),
+                      child: Text("حفظ الفاتورة", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, fontFamily: 'Cairo')),
+                    ),
+                  ),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-            // الحقول (تتعبأ تلقائياً)
-            TextField(
-              controller: nameController,
-              decoration: InputDecoration(
-                labelText: "اسم المحل",
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.store),
-              ),
+  // --- أدوات التصميم (Widgets) ---
+  Widget _glassTextField({required TextEditingController controller, required String label, required IconData icon, bool isNumber = false, bool isBig = false}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withOpacity(0.2)),
+          ),
+          child: TextField(
+            controller: controller,
+            keyboardType: isNumber ? TextInputType.number : TextInputType.text,
+            style: TextStyle(color: Colors.white, fontSize: isBig ? 24 : 16, fontWeight: isBig ? FontWeight.bold : FontWeight.normal),
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              labelText: label,
+              labelStyle: TextStyle(color: Colors.white70, fontFamily: 'Cairo'),
+              prefixIcon: Icon(icon, color: Colors.white70),
+              suffixText: isNumber ? "ر.س" : null,
+              suffixStyle: TextStyle(color: Colors.white70),
             ),
-            SizedBox(height: 15),
-            
-            TextField(
-              controller: amountController,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: "المبلغ الإجمالي",
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.attach_money),
-                suffixText: "ر.س",
-              ),
-            ),
-            SizedBox(height: 15),
-
-            TextField(
-              controller: dateController,
-              decoration: InputDecoration(
-                labelText: "التاريخ",
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.calendar_today),
-              ),
-            ),
-            SizedBox(height: 30),
-
-            // زر الحفظ
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: () {
-                  // هنا كود الحفظ في قاعدة البيانات (لاحقاً)
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("تم حفظ الفاتورة بنجاح! ✅")));
-                  Navigator.pop(context);
-                },
-                child: Text("حفظ الفاتورة", style: TextStyle(fontSize: 18, fontFamily: 'Cairo')),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  // نافذة اختيار (كاميرا أو استديو)
+  Widget _glowCircle() {
+    return Container(
+      width: 200, height: 200,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
+        child: Container(color: Colors.transparent),
+      ),
+    );
+  }
+
   void _showPickerOption() {
     showModalBottomSheet(
+      backgroundColor: Colors.transparent,
       context: context,
       builder: (context) {
-        return Wrap(
-          children: [
-            ListTile(
-              leading: Icon(Icons.camera_alt),
-              title: Text('الكاميرا'),
-              onTap: () { Navigator.pop(context); _pickImage(ImageSource.camera); },
-            ),
-            ListTile(
-              leading: Icon(Icons.image),
-              title: Text('الاستديو'),
-              onTap: () { Navigator.pop(context); _pickImage(ImageSource.gallery); },
-            ),
-          ],
+        return Container(
+          decoration: BoxDecoration(color: Color(0xFF1A2980), borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+          padding: EdgeInsets.all(20),
+          child: Wrap(children: [
+              ListTile(leading: Icon(Icons.camera_alt, color: Colors.white), title: Text('الكاميرا', style: TextStyle(color: Colors.white)), onTap: () { Navigator.pop(context); _pickImage(ImageSource.camera); }),
+              Divider(color: Colors.white24),
+              ListTile(leading: Icon(Icons.image, color: Colors.white), title: Text('الاستديو', style: TextStyle(color: Colors.white)), onTap: () { Navigator.pop(context); _pickImage(ImageSource.gallery); }),
+          ]),
         );
       },
     );
